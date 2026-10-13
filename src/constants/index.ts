@@ -1,6 +1,6 @@
 export const SYSTEM_NAME = '履约业务汇率线上化';
-export const APP_VERSION = '0.7.0';
-export const APP_VERSION_DATE = '2026-09-05';
+export const APP_VERSION = '0.8.0';
+export const APP_VERSION_DATE = '2026-10-13';
 
 export const CURRENT_OPERATOR = '张财务';
 export const CURRENT_OPERATOR_ROLE = '财务操作员';

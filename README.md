@@ -6,7 +6,7 @@ FUND 资金中台 · 履约业务汇率线上化前端原型（React + TypeScrip
 
 GitHub Pages：https://maxmabiz.github.io/unified-rate/
 
-当前版本：v0.7.0（2026-09-05）
+当前版本：v0.8.0（2026-10-13）
 
 ## 本地预览
 
@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-访问 http://127.0.0.1:5173/unified-rate/data
+访问 http://127.0.0.1:5173/unified-rate/
 
 推送到 `main` 后会自动部署 GitHub Pages。
 
