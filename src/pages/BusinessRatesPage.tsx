@@ -1,20 +1,18 @@
 import { useMemo, useState } from 'react';
-import { App, Button, Card, DatePicker, Form, Modal, Select, Space, Table, Tooltip, Typography } from 'antd';
-import { CalculatorOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Card, DatePicker, Form, Select, Space, Table, Tooltip, Typography } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import dayjs from 'dayjs';
-import BufferConfigModal from '@/components/BufferConfigModal';
 import CalcRuleModal from '@/components/CalcRuleModal';
 import { CustomBufferTag, EffectiveTag, LockedTag, SourceTag } from '@/components/StatusTags';
 import { RATE_SOURCE_LABEL } from '@/constants';
 import { useRateStore } from '@/store/RateStore';
-import { RATE_SOURCE_IDS, type BufferConfig, type OfficialQuote, type RateSource } from '@/types';
-import { customDayQuoteCount, isCustomDayQuote } from '@/utils/buffer';
+import { RATE_SOURCE_IDS, type OfficialQuote, type RateSource } from '@/types';
+import { isCustomDayQuote } from '@/utils/buffer';
 import { formatDateTime } from '@/utils/date';
 import { isQuoteLocked, latestQuoteDate } from '@/utils/officialQuote';
-import { combinedBufferOf, formatPercent, formatRate } from '@/utils/rateCalc';
-import { enabledSources } from '@/utils/source';
+import { formatPercent, formatRate } from '@/utils/rateCalc';
 
 const { Title, Paragraph } = Typography;
 
@@ -30,32 +28,13 @@ interface Filters {
 }
 
 export default function BusinessRatesPage() {
-  const { message } = App.useApp();
-  const {
-    pairs,
-    officialQuotes,
-    unlockedQuoteDate,
-    globalBuffer,
-    calculating,
-    recalculate,
-    saveGlobalBuffer,
-    savePairBuffer,
-    restorePairBuffer,
-  } = useRateStore();
+  const { pairs, officialQuotes, unlockedQuoteDate } = useRateStore();
   const [form] = Form.useForm();
   const [filters, setFilters] = useState<Filters>({});
-  const [bufferOpen, setBufferOpen] = useState(false);
-  const [bufferQuote, setBufferQuote] = useState<OfficialQuote | null>(null);
-  const [recalcOpen, setRecalcOpen] = useState(false);
   const [ruleQuote, setRuleQuote] = useState<OfficialQuote | null>(null);
   const watchedSource = Form.useWatch('source', form) as RateSource | undefined;
 
   const latestDate = unlockedQuoteDate ?? latestQuoteDate(officialQuotes);
-  const enabledCount = useMemo(
-    () => pairs.reduce((count, pair) => count + enabledSources(pair).length, 0),
-    [pairs],
-  );
-  const openDayExceptionCount = customDayQuoteCount(officialQuotes, latestDate);
 
   const quoteDates = useMemo(
     () => [...new Set(officialQuotes.map((item) => item.quoteDate))].sort(),
@@ -95,49 +74,6 @@ export default function BusinessRatesPage() {
     });
   }, [filters, officialQuotes, selectedQuoteDate, pairById, latestDate, unlockedQuoteDate]);
 
-  const viewedDate = selectedQuoteDate ?? latestDate;
-  const viewedExceptionCount = customDayQuoteCount(officialQuotes, viewedDate);
-  const globalPreviewQuotes = useMemo(
-    () =>
-      officialQuotes.filter((item) => {
-        if (item.quoteDate !== latestDate || isCustomDayQuote(item)) return false;
-        return isSourcePairEnabled(item.pairId, item.quoteSource);
-      }),
-    [officialQuotes, latestDate, pairById],
-  );
-
-  const handleSaveGlobal = (config: BufferConfig) => {
-    saveGlobalBuffer(config);
-    setBufferOpen(false);
-    message.success('已保存全局缓冲因子。点击「重新计算」后，当天跟随全局的报价才会更新');
-  };
-
-  const handleSavePair = (config: BufferConfig) => {
-    if (!bufferQuote) return;
-    savePairBuffer(bufferQuote.pairId, bufferQuote.quoteSource, config);
-    setBufferQuote(null);
-    message.success(`已调整 ${bufferQuote.pairLabel} 当天有效报价，下一报价日仍按全局默认`);
-  };
-
-  const handleRestorePair = () => {
-    if (!bufferQuote) return;
-    restorePairBuffer(bufferQuote.pairId, bufferQuote.quoteSource);
-    setBufferQuote(null);
-    message.success(`${bufferQuote.pairLabel} 当天报价已恢复跟随全局默认`);
-  };
-
-  const handleRecalculate = () => {
-    recalculate();
-    setRecalcOpen(false);
-    message.success(
-      openDayExceptionCount
-        ? `已按 ${latestDate} 行情重算跟随全局的报价；${openDayExceptionCount} 个当日例外未改动`
-        : latestDate
-          ? `已按 ${latestDate} 行情重算 ${enabledCount} 个货币对的全部数据源报价。`
-          : '已按当前市场数据和缓冲因子重新计算',
-    );
-  };
-
   const columns: ColumnsType<OfficialQuote> = [
     { title: '报价数据日', dataIndex: 'quoteDate', width: 108 },
     { title: '货币对', dataIndex: 'pairLabel', width: 96 },
@@ -158,20 +94,13 @@ export default function BusinessRatesPage() {
       title: '综合缓冲',
       dataIndex: 'combinedBuffer',
       align: 'right',
-      width: 168,
+      width: 112,
       render: (value: string, record) => {
-        const locked = isQuoteLocked(record.quoteDate, unlockedQuoteDate);
-        const canEdit = !locked && isSourcePairEnabled(record.pairId, record.quoteSource);
         const custom = isCustomDayQuote(record);
         return (
           <span className="buffer-cell">
             <span className={`buffer-value${custom ? ' is-custom' : ''}`}>{formatPercent(value)}</span>
-            {custom ? <CustomBufferTag onClick={canEdit ? () => setBufferQuote(record) : undefined} /> : null}
-            {canEdit ? (
-              <Button type="link" className="buffer-config-link" onClick={() => setBufferQuote(record)}>
-                修改
-              </Button>
-            ) : null}
+            {custom ? <CustomBufferTag /> : null}
           </span>
         );
       },
@@ -233,37 +162,11 @@ export default function BusinessRatesPage() {
 
   return (
     <div className="page-wrap">
-      <div className="page-header page-header-split">
-        <div className="page-header-main">
-          <Title level={3}>履约报价汇率</Title>
-          <Paragraph className="page-desc">
-            官方报价按行情日存档。默认最新日可改缓冲、可重算；历史日只读。各接入数据源各出一条报价。
-          </Paragraph>
-        </div>
-        <div className="page-toolbar-cluster">
-          <div className="page-toolbar-fact">
-            <span className="k">综合缓冲因子</span>
-            <span className="v">{formatPercent(combinedBufferOf(globalBuffer))}</span>
-          </div>
-          {viewedExceptionCount > 0 ? (
-            <div className="page-toolbar-fact">
-              <span className="k">单独配置</span>
-              <span className="v">{viewedExceptionCount} 条</span>
-            </div>
-          ) : null}
-          <Button icon={<SettingOutlined />} onClick={() => setBufferOpen(true)}>
-            缓冲因子配置
-          </Button>
-          <Button
-            type="primary"
-            icon={<CalculatorOutlined />}
-            loading={calculating}
-            disabled={!enabledCount}
-            onClick={() => setRecalcOpen(true)}
-          >
-            重新计算
-          </Button>
-        </div>
+      <div className="page-header">
+        <Title level={3}>履约报价汇率</Title>
+        <Paragraph className="page-desc">
+          官方报价按行情日存档，本页只读查询。缓冲因子与重算在「货币对配置」。
+        </Paragraph>
       </div>
 
       <Card className="page-card" variant="outlined">
@@ -367,7 +270,7 @@ export default function BusinessRatesPage() {
           columns={columns}
           dataSource={filtered}
           tableLayout="fixed"
-          scroll={{ x: 1120 }}
+          scroll={{ x: 1064 }}
           pagination={{
             pageSize: 20,
             showTotal: (total) => `共 ${total} 条`,
@@ -377,51 +280,6 @@ export default function BusinessRatesPage() {
         />
       </Card>
 
-      <BufferConfigModal
-        open={bufferOpen}
-        previewQuotes={globalPreviewQuotes}
-        initial={globalBuffer}
-        exceptionCount={openDayExceptionCount}
-        onCancel={() => setBufferOpen(false)}
-        onSave={handleSaveGlobal}
-      />
-      <BufferConfigModal
-        open={!!bufferQuote}
-        quote={bufferQuote}
-        previewQuotes={[]}
-        initial={
-          bufferQuote
-            ? { volatilityBuffer: bufferQuote.volatilityBuffer, fee: bufferQuote.fee }
-            : globalBuffer
-        }
-        onCancel={() => setBufferQuote(null)}
-        onSave={handleSavePair}
-        onRestore={handleRestorePair}
-      />
-      <Modal
-        title="重新计算当前报价日？"
-        open={recalcOpen}
-        onCancel={() => setRecalcOpen(false)}
-        onOk={handleRecalculate}
-        okText="重算"
-        cancelText="取消"
-        confirmLoading={calculating}
-        destroyOnHidden
-      >
-        <Paragraph>
-          {latestDate
-            ? `将按各接入数据源截至 ${latestDate} 的近 7 个交易日均价，重算当天仍跟随全局的报价${
-                openDayExceptionCount ? `（不含 ${openDayExceptionCount} 条当日例外）` : ''
-              }。`
-            : '将按当前市场数据和缓冲因子重算全部已启用货币对。'}
-        </Paragraph>
-        {latestDate ? (
-          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            仅更新 {latestDate} 的官方报价，已锁定的历史日不会改写。
-            {openDayExceptionCount ? ` ${openDayExceptionCount} 个当日例外不会被覆盖。` : ''}
-          </Paragraph>
-        ) : null}
-      </Modal>
       <CalcRuleModal open={!!ruleQuote} quote={ruleQuote} onClose={() => setRuleQuote(null)} />
     </div>
   );

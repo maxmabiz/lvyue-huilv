@@ -16,8 +16,8 @@ import type {
 } from '@/types';
 import { RATE_SOURCE_IDS } from '@/types';
 import { createInitialSnapshot, createConfiguredPair, mockBarForDate } from '@/mock/seed';
-import { calendarDaysInRange, lastNCalendarDays, nowText, tradingBars } from '@/utils/date';
-import { openQuoteDate, rebuildOpenDayQuotes, buildOfficialQuote, upsertQuote } from '@/utils/officialQuote';
+import { calendarDaysInRange, isTradingDay, lastNCalendarDays, nowText, tradingBars } from '@/utils/date';
+import { openQuoteDate, rebuildOpenDayQuotes, buildOfficialQuote, upsertQuote, latestQuoteDate } from '@/utils/officialQuote';
 import { applyGlobalBuffer } from '@/utils/buffer';
 import {
   averageFromHistory,
@@ -26,7 +26,19 @@ import {
   tradingDayChangeRatio,
 } from '@/utils/rateCalc';
 import { buildChangeLog, pairStatusChangeAction, pairStatusChangeDetail } from '@/utils/changeLog';
-import { applySourceEnabled, enabledSources, quoteFeed } from '@/utils/source';
+import {
+  applyDueQuoteSources,
+  applyPairEnabled,
+  applyPendingQuoteSourceDetail,
+  cancelPendingQuoteSourceDetail,
+  connectedSources,
+  enabledSources,
+  pendingQuoteSourceDetail,
+  quoteFeed,
+  quoteSourceChangeDetail,
+  scheduleQuoteSource as scheduleQuoteSourceOnPair,
+  type DueQuoteSourceSwitch,
+} from '@/utils/source';
 
 interface RateStoreValue {
   sourceSync: AppSnapshot['sourceSync'];
@@ -45,7 +57,13 @@ interface RateStoreValue {
   savePairBuffer: (id: string, source: RateSource, config: BufferConfig) => void;
   restorePairBuffer: (id: string, source: RateSource) => void;
   addPair: (input: PairConfigInput) => { ok: boolean; error?: string };
-  setSourceEnabled: (id: string, source: RateSource, enabled: boolean) => { ok: boolean; error?: string };
+  setPairEnabled: (id: string, enabled: boolean) => { ok: boolean; error?: string };
+  scheduleQuoteSource: (
+    id: string,
+    source: RateSource,
+    effectiveDate: string,
+  ) => { ok: boolean; error?: string; applied?: boolean };
+  cancelQuoteSourceSchedule: (id: string) => { ok: boolean; error?: string };
 }
 
 const RateStoreContext = createContext<RateStoreValue | null>(null);
@@ -62,6 +80,24 @@ function enrich(pair: FxPairState, globalBuffer: BufferConfig): EnrichedPair {
 
 function historyEndingAt(history: SourceFeed['history'], dataDate: string) {
   return tradingBars(history.filter((bar) => bar.date <= dataDate));
+}
+
+function asOfQuoteDate(pairs: FxPairState[], quotes: OfficialQuote[]) {
+  return openQuoteDate(pairs) ?? latestQuoteDate(quotes);
+}
+
+function dueSwitchLogs(applied: DueQuoteSourceSwitch[], changedAt: string): ConfigChangeLog[] {
+  return applied.map((item) =>
+    buildChangeLog({
+      pairId: item.pairId,
+      pairLabel: item.pairLabel,
+      source: item.to,
+      action: '更改数据源',
+      detail: applyPendingQuoteSourceDetail(item.from, item.to, item.effectiveDate),
+      changedAt,
+      operator: CURRENT_OPERATOR,
+    }),
+  );
 }
 
 export function flattenDailyRows(pairs: EnrichedPair[]): RateDailyRow[] {
@@ -238,21 +274,30 @@ export function RateProvider({ children }: { children: ReactNode }) {
     );
 
     setSnapshot((prev) => {
-      const nextPairs = prev.pairs.map((pair) => ({
+      const syncedPairs = prev.pairs.map((pair) => ({
         ...pair,
         feeds: {
           reuters: patchFeedAfterSync(pair, 'reuters', work, outcome, syncedAt, rangeDays),
           investing: patchFeedAfterSync(pair, 'investing', work, outcome, syncedAt, rangeDays),
         },
       }));
-      const calculatedAt = anyQuoteUpdated ? nowText(dayjs().add(2, 'second')) : prev.lastCalculatedAt;
-      const quotePairIds = anyQuoteUpdated
-        ? nextPairs
-            .filter((pair) =>
-              enabledSources(pair).some((source) => successSources.includes(source)),
-            )
-            .map((pair) => pair.id)
-        : [];
+      const dueAt = nowText();
+      const due = applyDueQuoteSources(syncedPairs, asOfQuoteDate(syncedPairs, prev.officialQuotes), dueAt);
+      const nextPairs = due.pairs;
+      const calculatedAt = anyQuoteUpdated ? nowText(dayjs().add(2, 'second')) : due.applied.length ? dueAt : prev.lastCalculatedAt;
+      const quotePairIds = [
+        ...(anyQuoteUpdated
+          ? nextPairs
+              .filter((pair) =>
+                enabledSources(pair).some((source) => successSources.includes(source)),
+              )
+              .map((pair) => pair.id)
+          : []),
+        ...due.applied
+          .filter((item) => nextPairs.find((pair) => pair.id === item.pairId)?.enabled)
+          .map((item) => item.pairId),
+      ];
+      const rebuildIds = [...new Set(quotePairIds)];
       return {
         ...prev,
         lastCalculatedAt: prev.lastCalculatedAt,
@@ -270,17 +315,18 @@ export function RateProvider({ children }: { children: ReactNode }) {
           ),
         },
         pairs: nextPairs,
-        officialQuotes: quotePairIds.length
+        officialQuotes: rebuildIds.length
           ? rebuildOpenDayQuotes(
               nextPairs,
               prev.officialQuotes,
               calculatedAt,
-              quotePairIds,
+              rebuildIds,
               prev.globalBuffer,
               true,
-              successSources,
+              due.applied.length ? undefined : successSources,
             )
           : prev.officialQuotes,
+        changeLogs: due.applied.length ? [...dueSwitchLogs(due.applied, dueAt), ...prev.changeLogs] : prev.changeLogs,
       };
     });
     setSyncing(false);
@@ -299,17 +345,22 @@ export function RateProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => {
       setSnapshot((prev) => {
         const calculatedAt = nowText();
+        const due = applyDueQuoteSources(prev.pairs, asOfQuoteDate(prev.pairs, prev.officialQuotes), calculatedAt);
         return {
           ...prev,
           lastCalculatedAt: calculatedAt,
+          pairs: due.pairs,
           officialQuotes: rebuildOpenDayQuotes(
-            prev.pairs,
+            due.pairs,
             prev.officialQuotes,
             calculatedAt,
             undefined,
             prev.globalBuffer,
             true,
           ),
+          changeLogs: due.applied.length
+            ? [...dueSwitchLogs(due.applied, calculatedAt), ...prev.changeLogs]
+            : prev.changeLogs,
         };
       });
       setCalculating(false);
@@ -405,22 +456,33 @@ export function RateProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   }, [snapshot.pairs]);
 
-  const setSourceEnabled = useCallback((id: string, source: RateSource, enabled: boolean) => {
+  const setPairEnabled = useCallback((id: string, enabled: boolean) => {
     const target = snapshot.pairs.find((pair) => pair.id === id);
     if (!target) return { ok: false, error: '货币对不存在' };
-    if (!target.feeds[source]?.connected) return { ok: false, error: '该货币对未接入此数据源' };
-    if (target.feeds[source].enabled === enabled) return { ok: true };
+    const connected = connectedSources(target);
+    if (!connected.length) return { ok: false, error: '该货币对未接入数据源' };
+    const quoting = enabledSources(target);
+    const already = enabled
+      ? Boolean(target.enabled && quoting.length === 1 && quoting[0] === target.quoteSource)
+      : !target.enabled && quoting.length === 0;
+    if (already) return { ok: true };
 
     setSnapshot((prev) => {
       const pair = prev.pairs.find((item) => item.id === id);
-      if (!pair || !pair.feeds[source]?.connected || pair.feeds[source].enabled === enabled) return prev;
+      if (!pair) return prev;
+      const sources = connectedSources(pair);
+      if (!sources.length) return prev;
+      const current = enabledSources(pair);
+      const unchanged = enabled
+        ? Boolean(pair.enabled && current.length === 1 && current[0] === pair.quoteSource)
+        : !pair.enabled && current.length === 0;
+      if (unchanged) return prev;
       const calculatedAt = nowText();
-      const nextPair = applySourceEnabled(pair, source, enabled, calculatedAt);
+      const nextPair = applyPairEnabled(pair, enabled, calculatedAt);
       const nextPairs = prev.pairs.map((item) => (item.id === id ? nextPair : item));
       const log = buildChangeLog({
         pairId: id,
         pairLabel: pair.pairLabel,
-        source,
         action: pairStatusChangeAction(enabled),
         detail: pairStatusChangeDetail(enabled),
         changedAt: calculatedAt,
@@ -431,8 +493,95 @@ export function RateProvider({ children }: { children: ReactNode }) {
         lastCalculatedAt: prev.lastCalculatedAt,
         pairs: nextPairs,
         officialQuotes: enabled
-          ? rebuildOpenDayQuotes(nextPairs, prev.officialQuotes, calculatedAt, [id], prev.globalBuffer, false, [source])
+          ? rebuildOpenDayQuotes(nextPairs, prev.officialQuotes, calculatedAt, [id], prev.globalBuffer)
           : prev.officialQuotes,
+        changeLogs: [log, ...prev.changeLogs],
+      };
+    });
+    return { ok: true };
+  }, [snapshot.pairs]);
+
+  const scheduleQuoteSource = useCallback((id: string, source: RateSource, effectiveDate: string) => {
+    const target = snapshot.pairs.find((pair) => pair.id === id);
+    if (!target) return { ok: false, error: '货币对不存在' };
+    if (!target.feeds[source]?.connected) return { ok: false, error: '该货币对未接入此数据源' };
+    if (!effectiveDate) return { ok: false, error: '请填写生效报价日' };
+    if (!isTradingDay(effectiveDate)) return { ok: false, error: '生效日须为交易日' };
+    const asOf = asOfQuoteDate(snapshot.pairs, snapshot.officialQuotes);
+    if (asOf && effectiveDate < asOf) return { ok: false, error: '生效日不能早于当前报价日' };
+    if (
+      target.quoteSource === source
+      && !target.pendingQuoteSource
+      && !target.pendingEffectiveDate
+    ) {
+      return { ok: true, applied: false };
+    }
+    if (target.pendingQuoteSource === source && target.pendingEffectiveDate === effectiveDate) {
+      return { ok: true, applied: false };
+    }
+
+    const appliedNow = Boolean(asOf && effectiveDate <= asOf);
+    setSnapshot((prev) => {
+      const pair = prev.pairs.find((item) => item.id === id);
+      if (!pair || !pair.feeds[source]?.connected) return prev;
+      const openDate = asOfQuoteDate(prev.pairs, prev.officialQuotes);
+      if (openDate && effectiveDate < openDate) return prev;
+      const calculatedAt = nowText();
+      const from = pair.quoteSource;
+      const scheduled = scheduleQuoteSourceOnPair(pair, source, effectiveDate, openDate, calculatedAt);
+      const nextPairs = prev.pairs.map((item) => (item.id === id ? scheduled.pair : item));
+      const log = buildChangeLog({
+        pairId: id,
+        pairLabel: pair.pairLabel,
+        source,
+        action: scheduled.applied ? '更改数据源' : '预约数据源',
+        detail: scheduled.applied
+          ? quoteSourceChangeDetail(from, source, effectiveDate)
+          : pendingQuoteSourceDetail(from, source, effectiveDate),
+        changedAt: calculatedAt,
+        operator: CURRENT_OPERATOR,
+      });
+      return {
+        ...prev,
+        lastCalculatedAt: prev.lastCalculatedAt,
+        pairs: nextPairs,
+        officialQuotes:
+          scheduled.applied && pair.enabled
+            ? rebuildOpenDayQuotes(nextPairs, prev.officialQuotes, calculatedAt, [id], prev.globalBuffer, false, [source])
+            : prev.officialQuotes,
+        changeLogs: [log, ...prev.changeLogs],
+      };
+    });
+    return { ok: true, applied: appliedNow };
+  }, [snapshot.pairs, snapshot.officialQuotes]);
+
+  const cancelQuoteSourceSchedule = useCallback((id: string) => {
+    const target = snapshot.pairs.find((pair) => pair.id === id);
+    if (!target) return { ok: false, error: '货币对不存在' };
+    if (!target.pendingQuoteSource || !target.pendingEffectiveDate) return { ok: true };
+
+    setSnapshot((prev) => {
+      const pair = prev.pairs.find((item) => item.id === id);
+      if (!pair?.pendingQuoteSource || !pair.pendingEffectiveDate) return prev;
+      const calculatedAt = nowText();
+      const nextPair: FxPairState = {
+        ...pair,
+        pendingQuoteSource: undefined,
+        pendingEffectiveDate: undefined,
+        configUpdatedAt: calculatedAt,
+      };
+      const log = buildChangeLog({
+        pairId: id,
+        pairLabel: pair.pairLabel,
+        source: pair.pendingQuoteSource,
+        action: '取消预约',
+        detail: cancelPendingQuoteSourceDetail(pair.pendingQuoteSource, pair.pendingEffectiveDate),
+        changedAt: calculatedAt,
+        operator: CURRENT_OPERATOR,
+      });
+      return {
+        ...prev,
+        pairs: prev.pairs.map((item) => (item.id === id ? nextPair : item)),
         changeLogs: [log, ...prev.changeLogs],
       };
     });
@@ -459,7 +608,9 @@ export function RateProvider({ children }: { children: ReactNode }) {
       savePairBuffer,
       restorePairBuffer,
       addPair,
-      setSourceEnabled,
+      setPairEnabled,
+      scheduleQuoteSource,
+      cancelQuoteSourceSchedule,
     }),
     [
       snapshot.sourceSync,
@@ -478,7 +629,9 @@ export function RateProvider({ children }: { children: ReactNode }) {
       savePairBuffer,
       restorePairBuffer,
       addPair,
-      setSourceEnabled,
+      setPairEnabled,
+      scheduleQuoteSource,
+      cancelQuoteSourceSchedule,
     ],
   );
 

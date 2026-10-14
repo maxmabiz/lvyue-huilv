@@ -6,7 +6,7 @@ FUND 资金中台 · 履约业务汇率线上化前端原型（React + TypeScrip
 
 GitHub Pages：https://maxmabiz.github.io/unified-rate/
 
-当前版本：v0.8.0（2026-10-13）
+当前版本：v0.9.0（2026-10-15）
 
 ## 本地预览
 

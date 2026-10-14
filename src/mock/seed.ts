@@ -274,13 +274,19 @@ export function createConfiguredPair(
     quoteSource,
     feeds: {
       reuters: reutersConnected
-        ? feedFromHistory(input.reutersCode || suggestReutersCode(currency1, currency2), market)
+        ? {
+            ...feedFromHistory(input.reutersCode || suggestReutersCode(currency1, currency2), market),
+            enabled: quoteSource === 'reuters',
+          }
         : emptyFeed(input.reutersCode),
       investing: investingConnected
-        ? feedFromHistory(
-            input.investingCode || suggestInvestingCode(currency1, currency2),
-            shiftBarsForInvesting(market),
-          )
+        ? {
+            ...feedFromHistory(
+              input.investingCode || suggestInvestingCode(currency1, currency2),
+              shiftBarsForInvesting(market),
+            ),
+            enabled: quoteSource === 'investing',
+          }
         : emptyFeed(input.investingCode),
     },
     volatilityBuffer: buffer.volatilityBuffer,

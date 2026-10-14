@@ -16,10 +16,10 @@ describe('官方报价按日冻结', () => {
     const tradingDays = lastNCalendarDays(INITIAL_DATA_DATE, HISTORY_CALENDAR_DAYS).filter(isTradingDay);
 
     expect(openQuoteDate(snapshot.pairs)).toBe('2026-08-18');
-    expect(snapshot.officialQuotes).toHaveLength(snapshot.pairs.length * 2 * tradingDays.length);
+    expect(snapshot.officialQuotes).toHaveLength(snapshot.pairs.length * tradingDays.length);
     expect(tradingDays[tradingDays.length - 1]).toBe('2026-08-18');
     expect(snapshot.officialQuotes.every((quote) => tradingDays.includes(quote.quoteDate))).toBe(true);
-    expect(snapshot.officialQuotes.filter((quote) => quote.quoteDate === '2026-08-18')).toHaveLength(16);
+    expect(snapshot.officialQuotes.filter((quote) => quote.quoteDate === '2026-08-18')).toHaveLength(8);
     expect(isQuoteLocked('2026-08-17', '2026-08-18')).toBe(true);
     expect(isQuoteLocked('2026-08-18', '2026-08-18')).toBe(false);
   });
@@ -95,15 +95,15 @@ describe('官方报价按日冻结', () => {
     expect(firstQuoteDate([], 'USDCNY')).toBeUndefined();
   });
 
-  it('每个接入数据源都生成报价', () => {
+  it('每个货币对当天只出选定数据源的报价', () => {
     const snapshot = createInitialSnapshot();
     const usdcnyOpen = snapshot.officialQuotes.filter(
       (quote) => quote.pair === 'USDCNY' && quote.quoteDate === '2026-08-18',
     );
     const sources = usdcnyOpen.map((quote) => quote.quoteSource).sort();
 
-    expect(sources).toEqual(['investing', 'reuters']);
-    expect(new Set(usdcnyOpen.map((quote) => quote.id)).size).toBe(2);
+    expect(sources).toEqual(['reuters']);
+    expect(new Set(usdcnyOpen.map((quote) => quote.id)).size).toBe(1);
     expect(
       snapshot.officialQuotes.every((quote) => quote.id === `${quote.pairId}-${quote.quoteSource}-${quote.quoteDate}`),
     ).toBe(true);

@@ -31,6 +31,9 @@ export interface FxPairState {
   pair: string;
   pairLabel: string;
   quoteSource: RateSource;
+  quoteSourceEffectiveDate?: string;
+  pendingQuoteSource?: RateSource;
+  pendingEffectiveDate?: string;
   feeds: Record<RateSource, SourceFeed>;
   volatilityBuffer: string;
   fee: string;
@@ -47,19 +50,6 @@ export interface ComputedQuotes {
 
 export interface EnrichedPair extends FxPairState, ComputedQuotes {
   updateDate: string;
-}
-
-export interface PairSourceRow {
-  id: string;
-  pairId: string;
-  pair: string;
-  pairLabel: string;
-  currency1: string;
-  currency2: string;
-  source: RateSource;
-  sourceCode: string;
-  enabled: boolean;
-  configUpdatedAt: string;
 }
 
 export interface OfficialQuote {

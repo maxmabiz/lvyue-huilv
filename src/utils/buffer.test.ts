@@ -62,7 +62,8 @@ describe('全局默认 + 当天例外缓冲', () => {
     const nextGlobal = { volatilityBuffer: '0.08', fee: '0.02' };
     const nextPairs = applyGlobalBuffer(snapshot.pairs, nextGlobal);
     const followerIds = openDayFollowerPairIds(nextPairs, afterCustom, '2026-08-18');
-    expect(followerIds).toContain('USDCNY');
+    expect(followerIds).not.toContain('USDCNY');
+    expect(followerIds).toContain('EURUSD');
     expect(customDayQuoteCount(afterCustom, '2026-08-18')).toBe(1);
 
     const next = rebuildOpenDayQuotes(
@@ -76,9 +77,6 @@ describe('全局默认 + 当天例外缓冲', () => {
     const usdReuters = next.find(
       (quote) => quote.pair === 'USDCNY' && quote.quoteDate === '2026-08-18' && quote.quoteSource === 'reuters',
     );
-    const usdInvesting = next.find(
-      (quote) => quote.pair === 'USDCNY' && quote.quoteDate === '2026-08-18' && quote.quoteSource === 'investing',
-    );
     const eurOpen = next.find(
       (quote) => quote.pair === 'EURUSD' && quote.quoteDate === '2026-08-18' && quote.quoteSource === 'reuters',
     );
@@ -90,11 +88,6 @@ describe('全局默认 + 当天例外缓冲', () => {
       combinedBuffer: '0.1500',
       bufferCustom: true,
       calculatedAt: '2026-08-18 10:00:00',
-    });
-    expect(usdInvesting).toMatchObject({
-      combinedBuffer: '0.1000',
-      bufferCustom: false,
-      calculatedAt: '2026-08-18 12:00:00',
     });
     expect(eurOpen).toMatchObject({
       combinedBuffer: '0.1000',

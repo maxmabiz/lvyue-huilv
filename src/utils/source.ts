@@ -3,7 +3,6 @@ import {
   RATE_SOURCE_IDS,
   type DailyBar,
   type FxPairState,
-  type PairSourceRow,
   type RateSource,
   type SourceFeed,
 } from '@/types';
@@ -26,32 +25,6 @@ export function connectedSources(pair: Pick<FxPairState, 'feeds'>): RateSource[]
 
 export function enabledSources(pair: Pick<FxPairState, 'feeds'>): RateSource[] {
   return RATE_SOURCE_IDS.filter((source) => pair.feeds[source].connected && pair.feeds[source].enabled);
-}
-
-export function flattenPairSourceRows(pairs: FxPairState[]): PairSourceRow[] {
-  const rows: PairSourceRow[] = [];
-  for (const pair of pairs) {
-    for (const source of connectedSources(pair)) {
-      const feed = pair.feeds[source];
-      rows.push({
-        id: `${pair.id}-${source}`,
-        pairId: pair.id,
-        pair: pair.pair,
-        pairLabel: pair.pairLabel,
-        currency1: pair.currency1,
-        currency2: pair.currency2,
-        source,
-        sourceCode: feed.code,
-        enabled: feed.enabled,
-        configUpdatedAt: feed.configUpdatedAt || pair.configUpdatedAt,
-      });
-    }
-  }
-  return rows.sort(
-    (a, b) =>
-      a.pair.localeCompare(b.pair) ||
-      RATE_SOURCE_IDS.indexOf(a.source) - RATE_SOURCE_IDS.indexOf(b.source),
-  );
 }
 
 export function applySourceEnabled(
@@ -78,6 +51,115 @@ export function applySourceEnabled(
   };
 }
 
+export function applyQuoteSource(
+  pair: FxPairState,
+  source: RateSource,
+  updatedAt: string,
+  effectiveDate?: string,
+): FxPairState {
+  if (!pair.feeds[source]?.connected) return pair;
+  const quoting = pair.enabled;
+  let next: FxPairState = { ...pair, quoteSource: source, configUpdatedAt: updatedAt };
+  for (const item of connectedSources(pair)) {
+    next = applySourceEnabled(next, item, quoting && item === source, updatedAt);
+  }
+  return {
+    ...next,
+    quoteSource: source,
+    quoteSourceEffectiveDate: effectiveDate ?? pair.quoteSourceEffectiveDate,
+    pendingQuoteSource: undefined,
+    pendingEffectiveDate: undefined,
+    configUpdatedAt: updatedAt,
+  };
+}
+
+export interface DueQuoteSourceSwitch {
+  pairId: string;
+  pairLabel: string;
+  from: RateSource;
+  to: RateSource;
+  effectiveDate: string;
+}
+
+export function scheduleQuoteSource(
+  pair: FxPairState,
+  source: RateSource,
+  effectiveDate: string,
+  asOfDate: string | undefined,
+  updatedAt: string,
+): { pair: FxPairState; applied: boolean } {
+  if (!pair.feeds[source]?.connected) return { pair, applied: false };
+  if (source === pair.quoteSource) {
+    return {
+      pair: {
+        ...pair,
+        pendingQuoteSource: undefined,
+        pendingEffectiveDate: undefined,
+        configUpdatedAt: updatedAt,
+      },
+      applied: false,
+    };
+  }
+  if (asOfDate && effectiveDate <= asOfDate) {
+    return { pair: applyQuoteSource(pair, source, updatedAt, effectiveDate), applied: true };
+  }
+  return {
+    pair: {
+      ...pair,
+      pendingQuoteSource: source,
+      pendingEffectiveDate: effectiveDate,
+      configUpdatedAt: updatedAt,
+    },
+    applied: false,
+  };
+}
+
+export function applyDueQuoteSources(
+  pairs: FxPairState[],
+  asOfDate: string | undefined,
+  updatedAt: string,
+): { pairs: FxPairState[]; applied: DueQuoteSourceSwitch[] } {
+  if (!asOfDate) return { pairs, applied: [] };
+  const applied: DueQuoteSourceSwitch[] = [];
+  const next = pairs.map((pair) => {
+    if (!pair.pendingQuoteSource || !pair.pendingEffectiveDate) return pair;
+    if (pair.pendingEffectiveDate > asOfDate) return pair;
+    applied.push({
+      pairId: pair.id,
+      pairLabel: pair.pairLabel,
+      from: pair.quoteSource,
+      to: pair.pendingQuoteSource,
+      effectiveDate: pair.pendingEffectiveDate,
+    });
+    return applyQuoteSource(pair, pair.pendingQuoteSource, updatedAt, pair.pendingEffectiveDate);
+  });
+  return { pairs: next, applied };
+}
+
+export function pendingQuoteSourceDetail(from: RateSource, to: RateSource, effectiveDate: string): string {
+  return `预约自 ${effectiveDate} 起报价数据源由 ${RATE_SOURCE_LABEL[from]} 改为 ${RATE_SOURCE_LABEL[to]}`;
+}
+
+export function applyPendingQuoteSourceDetail(from: RateSource, to: RateSource, effectiveDate: string): string {
+  return `自 ${effectiveDate} 起报价数据源由 ${RATE_SOURCE_LABEL[from]} 改为 ${RATE_SOURCE_LABEL[to]}`;
+}
+
+export function cancelPendingQuoteSourceDetail(to: RateSource, effectiveDate: string): string {
+  return `取消预约：原定 ${effectiveDate} 改为 ${RATE_SOURCE_LABEL[to]}`;
+}
+
+export function applyPairEnabled(pair: FxPairState, enabled: boolean, updatedAt: string): FxPairState {
+  if (enabled) {
+    const source = pair.feeds[pair.quoteSource]?.connected ? pair.quoteSource : connectedSources(pair)[0];
+    if (!source) return pair;
+    return applyQuoteSource({ ...pair, enabled: true }, source, updatedAt);
+  }
+  return connectedSources(pair).reduce(
+    (next, source) => applySourceEnabled(next, source, false, updatedAt),
+    pair,
+  );
+}
+
 export function pairOptionsForSource(
   pairs: Array<Pick<FxPairState, 'pair' | 'pairLabel' | 'feeds'>>,
   source?: RateSource,
@@ -90,6 +172,9 @@ export function pairOptionsForSource(
   return [...seen.entries()].map(([value, label]) => ({ value, label }));
 }
 
-export function quoteSourceChangeDetail(from: RateSource, to: RateSource): string {
+export function quoteSourceChangeDetail(from: RateSource, to: RateSource, effectiveDate?: string): string {
+  if (effectiveDate) {
+    return `自 ${effectiveDate} 起报价数据源由 ${RATE_SOURCE_LABEL[from]} 改为 ${RATE_SOURCE_LABEL[to]}`;
+  }
   return `报价数据源由 ${RATE_SOURCE_LABEL[from]} 改为 ${RATE_SOURCE_LABEL[to]}`;
 }

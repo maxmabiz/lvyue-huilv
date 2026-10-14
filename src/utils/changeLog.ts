@@ -1,4 +1,4 @@
-import { CURRENT_OPERATOR } from '@/constants';
+import { CURRENT_OPERATOR, RATE_SOURCE_LABEL } from '@/constants';
 import type { ConfigChangeLog, RateSource } from '@/types';
 
 export function pairStatusChangeDetail(enabled: boolean): string {
@@ -7,6 +7,12 @@ export function pairStatusChangeDetail(enabled: boolean): string {
 
 export function pairStatusChangeAction(enabled: boolean): string {
   return enabled ? '启用' : '停用';
+}
+
+export function sourceQuoteChangeDetail(source: RateSource, enabled: boolean): string {
+  return enabled
+    ? `${RATE_SOURCE_LABEL[source]} 改为用于当天报价`
+    : `${RATE_SOURCE_LABEL[source]} 改为不用于当天报价`;
 }
 
 export function buildChangeLog(input: {
@@ -36,8 +42,8 @@ export function sortChangeLogs(logs: ConfigChangeLog[]): ConfigChangeLog[] {
   return [...logs].sort((a, b) => b.changedAt.localeCompare(a.changedAt) || b.id.localeCompare(a.id));
 }
 
-export function isPairConfigLog(log: Pick<ConfigChangeLog, 'action' | 'detail'>): boolean {
-  return !log.action.includes('数据源') && !log.detail.includes('数据源');
+export function isPairConfigLog(_log: Pick<ConfigChangeLog, 'action' | 'detail'>): boolean {
+  return true;
 }
 
 export function pairConfigLogs(

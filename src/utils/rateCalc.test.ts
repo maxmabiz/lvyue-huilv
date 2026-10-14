@@ -150,6 +150,8 @@ describe('汇率数据最近10天模拟', () => {
     expect(pair.enabled).toBe(true);
     expect(pair.pairLabel).toBe('USD/JPY');
     expect(pair.quoteSource).toBe('reuters');
+    expect(pair.feeds.reuters.enabled).toBe(true);
+    expect(pair.feeds.investing.enabled).toBe(false);
     expect(pair.feeds.reuters.history.length).toBeGreaterThanOrEqual(10);
     expect(pair.feeds.investing.history.length).toBeGreaterThanOrEqual(10);
   });

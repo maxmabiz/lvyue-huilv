@@ -334,6 +334,39 @@ body {
   white-space: nowrap;
 }
 
+.source-cell {
+  white-space: normal;
+}
+
+.source-pending {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.source-pending .ant-btn {
+  height: auto;
+  padding-inline: 6px;
+}
+
+.source-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  white-space: normal;
+}
+
+.source-pick .ant-radio-wrapper,
+.source-pick .ant-checkbox-wrapper {
+  margin-inline-end: 0;
+}
+
+.source-pick .ant-tag {
+  margin-inline-end: 0;
+}
+
 .rate-data-table .ant-table-container,
 .rate-data-table .ant-table-content {
   overflow-x: auto;

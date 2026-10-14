@@ -7,6 +7,7 @@ import {
   pairConfigLogs,
   pairStatusChangeAction,
   pairStatusChangeDetail,
+  sourceQuoteChangeDetail,
   sortChangeLogs,
 } from '@/utils/changeLog';
 
@@ -16,6 +17,8 @@ describe('配置变更日志', () => {
     expect(pairStatusChangeAction(false)).toBe('停用');
     expect(pairStatusChangeDetail(true)).toBe('状态由停用改为启用');
     expect(pairStatusChangeDetail(false)).toBe('状态由启用改为停用');
+    expect(sourceQuoteChangeDetail('reuters', true)).toBe('Reuters 改为用于当天报价');
+    expect(sourceQuoteChangeDetail('investing', false)).toBe('英为财经 改为不用于当天报价');
   });
 
   it('初始快照按时间倒序提供启用停用日志，不含更改数据源', () => {
@@ -61,7 +64,7 @@ describe('配置变更日志', () => {
     expect(reuters[0].source).toBe('reuters');
   });
 
-  it('货币对配置日志不展示更改数据源', () => {
+  it('更改报价数据源会出现在货币对日志里', () => {
     const logs = [
       buildChangeLog({
         pairId: 'USDCNY',
@@ -73,15 +76,15 @@ describe('配置变更日志', () => {
       buildChangeLog({
         pairId: 'USDCNY',
         pairLabel: 'USD/CNY',
+        source: 'investing',
         action: '更改数据源',
         detail: '报价数据源由 Reuters 改为 英为财经',
         changedAt: '2026-08-18 11:00:00',
       }),
     ];
     const visible = pairConfigLogs(logs, 'USDCNY');
-    expect(visible).toHaveLength(1);
-    expect(visible[0].action).toBe('启用');
-    expect(visible.every((log) => !log.action.includes('数据源') && !log.detail.includes('数据源'))).toBe(true);
+    expect(visible).toHaveLength(2);
+    expect(visible.some((log) => log.action === '更改数据源')).toBe(true);
   });
 
   it('新日志默认记当前操作人', () => {

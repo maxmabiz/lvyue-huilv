@@ -1,7 +1,7 @@
 {
   "name": "unified-rate",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "homepage": "https://maxmabiz.github.io/unified-rate/",
   "type": "module",
   "scripts": {
