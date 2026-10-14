@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
-  base: '/unified-rate/',
+  base: process.env.PAGES_BASE || '/unified-rate/',
   plugins: [react()],
   resolve: {
     alias: {

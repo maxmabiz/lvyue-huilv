@@ -21,11 +21,11 @@ export default function MainLayout() {
       children: [
         {
           key: 'rate-mgmt',
-          label: '履约业务汇率线上化',
+          label: SYSTEM_NAME,
           children: [
             { key: '/pairs', label: '报价配置' },
             { key: '/data', label: '汇率数据' },
-            { key: '/business-rates', label: '履约报价汇率' },
+            { key: '/business-rates', label: '履约报价' },
           ],
         },
       ],
@@ -62,7 +62,7 @@ export default function MainLayout() {
           <div className="app-header-title">
             <Text strong>资金中台</Text>
             <span className="app-header-divider" />
-            <Text type="secondary">履约业务汇率线上化</Text>
+            <Text type="secondary">{SYSTEM_NAME}</Text>
             <Tag className="app-version" bordered={false} color="blue">
               v{APP_VERSION}
             </Tag>

@@ -160,7 +160,7 @@ export default function BusinessRatesPage() {
   return (
     <div className="page-wrap">
       <div className="page-header">
-        <Title level={3}>履约报价汇率</Title>
+        <Title level={3}>履约报价</Title>
         <Paragraph className="page-desc">
           官方报价按行情日存档，本页只读查询。缓冲因子与重算在「报价配置」。
         </Paragraph>

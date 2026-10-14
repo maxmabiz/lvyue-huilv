@@ -1,4 +1,4 @@
-export const SYSTEM_NAME = '履约业务汇率线上化';
+export const SYSTEM_NAME = '履约汇率';
 export const APP_VERSION = '0.10.0';
 export const APP_VERSION_DATE = '2026-10-15';
 

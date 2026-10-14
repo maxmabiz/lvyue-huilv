@@ -1,10 +1,12 @@
-# 履约业务汇率线上化
+# 履约汇率
 
-FUND 资金中台 · 履约业务汇率线上化前端原型（React + TypeScript + Ant Design）。Mock 数据，不接真实 Reuters。
+FUND 资金中台 · 履约汇率前端原型（React + TypeScript + Ant Design）。Mock 数据，不接真实 Reuters。
 
 ## 在线演示
 
-GitHub Pages：https://maxmabiz.github.io/unified-rate/
+本轮预览：https://maxmabiz.github.io/lvyue-huilv/
+
+此前版本：https://maxmabiz.github.io/unified-rate/
 
 当前版本：v0.10.0（2026-10-15）
 
@@ -17,7 +19,7 @@ npm run dev
 
 访问 http://127.0.0.1:5173/unified-rate/
 
-推送到 `main` 后会自动部署 GitHub Pages。
+本轮发布推送到 `lvyue-huilv` 仓库的 `main`，不会覆盖此前 `unified-rate` 站点。
 
 ## 页面
 
@@ -25,4 +27,4 @@ npm run dev
 | --- | --- |
 | 报价配置 | `/pairs` |
 | 汇率数据 | `/data` |
-| 履约报价汇率 | `/business-rates` |
+| 履约报价 | `/business-rates` |

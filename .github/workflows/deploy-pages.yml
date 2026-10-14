@@ -32,6 +32,8 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          PAGES_BASE: /${{ github.event.repository.name }}/
 
       - name: Add 404.html for SPA fallback
         run: cp dist/index.html dist/404.html
