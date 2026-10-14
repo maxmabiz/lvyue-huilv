@@ -57,9 +57,6 @@ export default function BusinessRatesPage() {
     return [...seen.entries()].map(([value, label]) => ({ value, label }));
   }, [officialQuotes, watchedSource, filters.source]);
 
-  const isSourcePairEnabled = (pairId: string, source: RateSource) =>
-    Boolean(pairById.get(pairId)?.feeds[source]?.enabled);
-
   const filtered = useMemo(() => {
     return officialQuotes.filter((item) => {
       if (filters.currency1 && item.currency1 !== filters.currency1) return false;
@@ -69,7 +66,7 @@ export default function BusinessRatesPage() {
       if (selectedQuoteDate && item.quoteDate !== selectedQuoteDate) return false;
       if (filters.status === 'effective' && isQuoteLocked(item.quoteDate, unlockedQuoteDate)) return false;
       if (filters.status === 'locked' && !isQuoteLocked(item.quoteDate, unlockedQuoteDate)) return false;
-      if (item.quoteDate === latestDate && !isSourcePairEnabled(item.pairId, item.quoteSource)) return false;
+      if (item.quoteDate === latestDate && !pairById.get(item.pairId)?.enabled) return false;
       return true;
     });
   }, [filters, officialQuotes, selectedQuoteDate, pairById, latestDate, unlockedQuoteDate]);
@@ -165,7 +162,7 @@ export default function BusinessRatesPage() {
       <div className="page-header">
         <Title level={3}>履约报价汇率</Title>
         <Paragraph className="page-desc">
-          官方报价按行情日存档，本页只读查询。缓冲因子与重算在「货币对配置」。
+          官方报价按行情日存档，本页只读查询。缓冲因子与重算在「报价配置」。
         </Paragraph>
       </div>
 

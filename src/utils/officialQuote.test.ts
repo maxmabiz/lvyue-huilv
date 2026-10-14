@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HISTORY_CALENDAR_DAYS, INITIAL_DATA_DATE } from '@/constants';
 import { isTradingDay, lastNCalendarDays } from '@/utils/date';
 import { createInitialSnapshot } from '@/mock/seed';
+import { applyQuoteSource } from '@/utils/source';
 import {
   firstQuoteDate,
   isQuoteLocked,
@@ -107,5 +108,20 @@ describe('官方报价按日冻结', () => {
     expect(
       snapshot.officialQuotes.every((quote) => quote.id === `${quote.pairId}-${quote.quoteSource}-${quote.quoteDate}`),
     ).toBe(true);
+  });
+
+  it('当天已有报价时重算沿用原数据源，不因配置改源而换当天报价', () => {
+    const snapshot = createInitialSnapshot();
+    const pair = snapshot.pairs.find((item) => item.id === 'USDCNY');
+    expect(pair).toBeDefined();
+    const switched = applyQuoteSource(pair!, 'investing', '2026-08-18 12:00:00');
+    const nextPairs = snapshot.pairs.map((item) => (item.id === 'USDCNY' ? switched : item));
+    const next = rebuildOpenDayQuotes(nextPairs, snapshot.officialQuotes, '2026-08-18 12:00:00');
+    const open = next.filter((quote) => quote.pair === 'USDCNY' && quote.quoteDate === '2026-08-18');
+
+    expect(switched.quoteSource).toBe('investing');
+    expect(open).toHaveLength(1);
+    expect(open[0].quoteSource).toBe('reuters');
+    expect(open[0].calculatedAt).toBe('2026-08-18 12:00:00');
   });
 });

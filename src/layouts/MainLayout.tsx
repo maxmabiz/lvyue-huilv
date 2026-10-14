@@ -23,7 +23,7 @@ export default function MainLayout() {
           key: 'rate-mgmt',
           label: '履约业务汇率线上化',
           children: [
-            { key: '/pairs', label: '货币对配置' },
+            { key: '/pairs', label: '报价配置' },
             { key: '/data', label: '汇率数据' },
             { key: '/business-rates', label: '履约报价汇率' },
           ],

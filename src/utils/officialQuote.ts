@@ -120,11 +120,13 @@ export function rebuildOpenDayQuotes(
   const targets = pairs.filter((pair) => pair.enabled && (!pairIds || pairIds.includes(pair.id)));
   let next = quotes;
   for (const pair of targets) {
-    for (const source of enabledSources(pair)) {
+    const existingForDay = next.filter((quote) => quote.pairId === pair.id && quote.quoteDate === unlocked);
+    const sourcesToBuild = existingForDay.length
+      ? [...new Set(existingForDay.map((quote) => quote.quoteSource))]
+      : enabledSources(pair);
+    for (const source of sourcesToBuild) {
       if (sources && !sources.includes(source)) continue;
-      const existing = next.find(
-        (quote) => quote.pairId === pair.id && quote.quoteDate === unlocked && quote.quoteSource === source,
-      );
+      const existing = existingForDay.find((quote) => quote.quoteSource === source);
       if (skipCustom && existing?.bufferCustom) continue;
       next = upsertQuote(next, buildOfficialQuote(pair, unlocked, calculatedAt, globalBuffer, false, source));
     }

@@ -31,9 +31,6 @@ export interface FxPairState {
   pair: string;
   pairLabel: string;
   quoteSource: RateSource;
-  quoteSourceEffectiveDate?: string;
-  pendingQuoteSource?: RateSource;
-  pendingEffectiveDate?: string;
   feeds: Record<RateSource, SourceFeed>;
   volatilityBuffer: string;
   fee: string;

@@ -1,9 +1,7 @@
-import { useMemo, useState } from 'react';
-import { App, Button, Card, DatePicker, Form, Modal, Radio, Select, Space, Table, Tooltip, Typography } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { App, Button, Card, Form, Modal, Radio, Select, Space, Table, Typography } from 'antd';
 import { CalculatorOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import type { Dayjs } from 'dayjs';
-import dayjs from 'dayjs';
 import BufferConfigModal from '@/components/BufferConfigModal';
 import ChangeLogDrawer from '@/components/ChangeLogDrawer';
 import { EnabledTag, SourceTag } from '@/components/StatusTags';
@@ -11,9 +9,9 @@ import { RATE_SOURCE_LABEL } from '@/constants';
 import { useRateStore } from '@/store/RateStore';
 import { RATE_SOURCE_IDS, type BufferConfig, type EnrichedPair, type RateSource } from '@/types';
 import { customDayQuoteCount, isCustomDayQuote } from '@/utils/buffer';
-import { formatDateTime, isTradingDay } from '@/utils/date';
+import { formatDateTime } from '@/utils/date';
 import { pairConfigLogs } from '@/utils/changeLog';
-import { firstQuoteDate, latestQuoteDate } from '@/utils/officialQuote';
+import { latestQuoteDate } from '@/utils/officialQuote';
 import { combinedBufferOf, formatPercent } from '@/utils/rateCalc';
 import { connectedSources, pairOptionsForSource } from '@/utils/source';
 
@@ -37,18 +35,28 @@ export default function PairConfigPage() {
     recalculate,
     saveGlobalBuffer,
     setPairEnabled,
-    scheduleQuoteSource,
-    cancelQuoteSourceSchedule,
+    setQuoteSource,
   } = useRateStore();
   const [form] = Form.useForm();
   const [switchForm] = Form.useForm();
   const [filters, setFilters] = useState<Filters>({});
   const [disablingRow, setDisablingRow] = useState<EnrichedPair | null>(null);
-  const [switchingSource, setSwitchingSource] = useState<{ row: EnrichedPair; source: RateSource } | null>(null);
+  const [switchingRow, setSwitchingRow] = useState<EnrichedPair | null>(null);
   const [logRow, setLogRow] = useState<EnrichedPair | null>(null);
   const [bufferOpen, setBufferOpen] = useState(false);
   const [recalcOpen, setRecalcOpen] = useState(false);
   const watchedSource = Form.useWatch('source', form) as RateSource | undefined;
+  const switchSource = Form.useWatch('source', switchForm) as RateSource | undefined;
+
+  useEffect(() => {
+    if (!switchingRow) {
+      switchForm.resetFields();
+      return;
+    }
+    switchForm.setFieldsValue({
+      source: connectedSources(switchingRow).find((source) => source !== switchingRow.quoteSource),
+    });
+  }, [switchingRow, switchForm]);
 
   const latestDate = unlockedQuoteDate ?? latestQuoteDate(officialQuotes);
   const enabledPairCount = useMemo(() => pairs.filter((pair) => pair.enabled).length, [pairs]);
@@ -58,7 +66,7 @@ export default function PairConfigPage() {
     () =>
       officialQuotes.filter((item) => {
         if (item.quoteDate !== latestDate || isCustomDayQuote(item)) return false;
-        return Boolean(pairById.get(item.pairId)?.feeds[item.quoteSource]?.enabled);
+        return Boolean(pairById.get(item.pairId)?.enabled);
       }),
     [officialQuotes, latestDate, pairById],
   );
@@ -102,29 +110,17 @@ export default function PairConfigPage() {
     );
   };
 
-  const handleScheduleQuoteSource = (row: EnrichedPair, source: RateSource, effectiveDate: string) => {
-    const result = scheduleQuoteSource(row.id, source, effectiveDate);
+  const handleQuoteSource = (row: EnrichedPair, source: RateSource) => {
+    const result = setQuoteSource(row.id, source);
     if (!result.ok) {
       message.error(result.error || '操作失败');
       return;
     }
-    setSwitchingSource(null);
+    setSwitchingRow(null);
     switchForm.resetFields();
-    const label = RATE_SOURCE_LABEL[source];
     message.success(
-      result.applied
-        ? `已从 ${effectiveDate} 起将 ${row.pairLabel} 改为 ${label}`
-        : `已预约 ${row.pairLabel} 自 ${effectiveDate} 起改为 ${label}，当天报价不变`,
+      `已将 ${row.pairLabel} 改为 ${RATE_SOURCE_LABEL[source]}，已生成报价不变，下次报价起生效`,
     );
-  };
-
-  const handleCancelSchedule = (row: EnrichedPair) => {
-    const result = cancelQuoteSourceSchedule(row.id);
-    if (!result.ok) {
-      message.error(result.error || '操作失败');
-      return;
-    }
-    message.success(`已取消 ${row.pairLabel} 的数据源预约`);
   };
 
   const handleSaveGlobal = (config: BufferConfig) => {
@@ -145,52 +141,22 @@ export default function PairConfigPage() {
     );
   };
 
+  const otherSource = (row: EnrichedPair) =>
+    connectedSources(row).find((source) => source !== row.quoteSource);
+
+  const nextSourceLabel = switchSource
+    ? RATE_SOURCE_LABEL[switchSource]
+    : switchingRow
+      ? RATE_SOURCE_LABEL[switchingRow.quoteSource]
+      : '所选数据源';
+
   const columns: ColumnsType<EnrichedPair> = [
     { title: '货币对', dataIndex: 'pairLabel', width: 96 },
     {
       title: '数据来源',
       key: 'sources',
-      width: 280,
-      render: (_, record) => (
-        <div className="source-cell">
-          <Radio.Group
-            className="source-pick"
-            value={record.quoteSource}
-            onChange={(event) => {
-              const source = event.target.value as RateSource;
-              if (source === record.quoteSource) return;
-              setSwitchingSource({ row: record, source });
-            }}
-          >
-            {connectedSources(record).map((source) => (
-              <Radio key={source} value={source}>
-                <SourceTag source={source} />
-              </Radio>
-            ))}
-          </Radio.Group>
-          {record.pendingQuoteSource && record.pendingEffectiveDate ? (
-            <div className="source-pending">
-              将于 {record.pendingEffectiveDate} 改为 {RATE_SOURCE_LABEL[record.pendingQuoteSource]}
-              <Button type="link" size="small" onClick={() => handleCancelSchedule(record)}>
-                取消预约
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ),
-    },
-    {
-      title: (
-        <Tooltip title="更换数据源时手填的生效报价日。预约未到期显示预约日，到期或当天切换后仍保留。">
-          <span>生效报价日</span>
-        </Tooltip>
-      ),
-      key: 'quoteSourceEffectiveDate',
-      width: 128,
-      render: (_, record) => {
-        if (record.pendingEffectiveDate) return `${record.pendingEffectiveDate}（预约）`;
-        return record.quoteSourceEffectiveDate ?? '-';
-      },
+      width: 108,
+      render: (_, record) => <SourceTag source={record.quoteSource} />,
     },
     { title: '基准货币', dataIndex: 'currency1', width: 88 },
     { title: '计价货币', dataIndex: 'currency2', width: 88 },
@@ -201,16 +167,6 @@ export default function PairConfigPage() {
       render: (enabled: boolean) => <EnabledTag enabled={enabled} />,
     },
     {
-      title: (
-        <Tooltip title="该货币对已存档官方报价中最早的行情日，用于看清从哪天开始报；不是预约生效日。">
-          <span>首次报价日</span>
-        </Tooltip>
-      ),
-      key: 'firstQuoteDate',
-      width: 112,
-      render: (_, record) => firstQuoteDate(officialQuotes, record.id) ?? '-',
-    },
-    {
       title: '最近修改时间',
       dataIndex: 'configUpdatedAt',
       width: 168,
@@ -219,9 +175,14 @@ export default function PairConfigPage() {
     {
       title: '操作',
       key: 'action',
-      width: 128,
+      width: 220,
       render: (_, record) => (
         <Space size={8}>
+          {otherSource(record) ? (
+            <Button type="link" onClick={() => setSwitchingRow(record)}>
+              更改
+            </Button>
+          ) : null}
           {record.enabled ? (
             <Button type="link" onClick={() => setDisablingRow(record)}>
               停用
@@ -243,10 +204,7 @@ export default function PairConfigPage() {
     <div className="page-wrap">
       <div className="page-header page-header-split">
         <div className="page-header-main">
-          <Title level={3}>货币对配置</Title>
-          <Paragraph className="page-desc">
-            每个货币对一条配置，只能选择一个数据源。更换数据源须手填生效报价日，到期后才换。
-          </Paragraph>
+          <Title level={3}>报价配置</Title>
         </div>
         <div className="page-toolbar-cluster">
           <div className="page-toolbar-fact">
@@ -326,7 +284,7 @@ export default function PairConfigPage() {
           columns={columns}
           dataSource={filtered}
           tableLayout="fixed"
-          scroll={{ x: 1160 }}
+          scroll={{ x: 888 }}
           pagination={{
             pageSize: 10,
             showTotal: (total) => `共 ${total} 条`,
@@ -360,56 +318,43 @@ export default function PairConfigPage() {
         </Paragraph>
       </Modal>
       <Modal
-        title={
-          switchingSource
-            ? `将 ${switchingSource.row.pairLabel} 改为 ${RATE_SOURCE_LABEL[switchingSource.source]}？`
-            : '更改数据源？'
-        }
-        open={!!switchingSource}
+        title={switchingRow ? `更改 ${switchingRow.pairLabel} 数据源` : '更改数据源'}
+        open={!!switchingRow}
         onCancel={() => {
-          setSwitchingSource(null);
+          setSwitchingRow(null);
           switchForm.resetFields();
         }}
         onOk={async () => {
-          if (!switchingSource) return;
+          if (!switchingRow) return;
           const values = await switchForm.validateFields();
-          const effectiveDate = (values.effectiveDate as Dayjs).format('YYYY-MM-DD');
-          handleScheduleQuoteSource(switchingSource.row, switchingSource.source, effectiveDate);
+          handleQuoteSource(switchingRow, values.source as RateSource);
         }}
         okText="确定"
         cancelText="取消"
         destroyOnHidden
         afterOpenChange={(open) => {
-          if (open) switchForm.resetFields();
+          if (!open) switchForm.resetFields();
         }}
       >
         <Form form={switchForm} layout="vertical">
           <Paragraph>
-            {switchingSource
-              ? `当天报价仍用 ${RATE_SOURCE_LABEL[switchingSource.row.quoteSource]}。从你填写的报价日起，才改用 ${RATE_SOURCE_LABEL[switchingSource.source]}。`
-              : '须手填生效报价日，到期后才切换数据源。'}
+            当前数据源：{switchingRow ? RATE_SOURCE_LABEL[switchingRow.quoteSource] : '-'}
           </Paragraph>
           <Form.Item
-            name="effectiveDate"
-            label="生效报价日"
-            rules={[{ required: true, message: '请填写生效报价日' }]}
+            name="source"
+            label="改为"
+            rules={[{ required: true, message: '请选择数据源' }]}
           >
-            <DatePicker
-              style={{ width: '100%' }}
-              placeholder="请选择日期"
-              showNow={false}
-              defaultPickerValue={latestDate ? dayjs(latestDate) : undefined}
-              disabledDate={(current) => {
-                if (!current) return false;
-                if (latestDate && current.isBefore(latestDate, 'day')) return true;
-                return !isTradingDay(current);
-              }}
-            />
+            <Radio.Group className="source-pick">
+              {(switchingRow ? connectedSources(switchingRow) : []).map((source) => (
+                <Radio key={source} value={source} disabled={source === switchingRow?.quoteSource}>
+                  <SourceTag source={source} />
+                </Radio>
+              ))}
+            </Radio.Group>
           </Form.Item>
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            {latestDate
-              ? `若填写当前报价日 ${latestDate}，当天就会换；历史日不会改写。`
-              : '历史日不会改写。'}
+            已生成的报价不会改写。下次出报价起用 {nextSourceLabel}。
           </Paragraph>
         </Form>
       </Modal>
@@ -440,7 +385,7 @@ export default function PairConfigPage() {
         </Paragraph>
         {latestDate ? (
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            仅更新 {latestDate} 的官方报价，已锁定的历史日不会改写。
+            仅更新 {latestDate} 的官方报价价格，已锁定的历史日和当天数据源都不会因改源而改写。
             {openDayExceptionCount ? ` ${openDayExceptionCount} 个当日例外不会被覆盖。` : ''}
           </Paragraph>
         ) : null}
